@@ -61,11 +61,20 @@ echo "Filling COMMENTS in $OUTPUT_CSV..."
 TMP_OUTPUT="${OUTPUT_CSV}.tmp"
 
 tail -n +2 "$OUTPUT_CSV" | while IFS=',' read -r ORDER_ID COMMENT; do
+    # Clean and trim ORDER_ID (remove \r and leading/trailing spaces)
+    ORDER_ID_CLEAN=$(echo "$ORDER_ID" | tr -d '\r' | xargs)
+
     COMMENT_TEXT=""
 
     for file in "$TEMP_DIR"/*_enter.csv; do
-        # Skip first line (version), check from line 2 onwards
-        if tail -n +2 "$file" | awk -F'|' -v oid="$ORDER_ID" '$18 == oid {exit 0} END {exit 1}'; then
+        # Skip version line, check 18th column match
+        if tail -n +2 "$file" | awk -F'|' -v oid="$ORDER_ID_CLEAN" '
+            {
+                gsub(/\r/, "", $18)
+                if ($18 == oid) {exit 0}
+            }
+            END {exit 1}
+        '; then
             FILENAME=$(basename "$file")
             COMMENT_TEXT="Found in $FILENAME"
             break
@@ -75,7 +84,7 @@ tail -n +2 "$OUTPUT_CSV" | while IFS=',' read -r ORDER_ID COMMENT; do
     echo "${ORDER_ID},\"${COMMENT_TEXT}\"" >> "$TMP_OUTPUT"
 done
 
-# Rebuild the final CSV
+# Rebuild CSV with header
 echo "ORDERID,COMMENTS" > "$OUTPUT_CSV"
 cat "$TMP_OUTPUT" >> "$OUTPUT_CSV"
 rm "$TMP_OUTPUT"
