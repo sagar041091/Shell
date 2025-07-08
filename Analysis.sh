@@ -85,10 +85,10 @@ function check_in_files {
 # Rewrite OUTPUT_CSV with COMMENTS
 TMP_OUTPUT="${OUTPUT_CSV}.tmp"
 echo "ORDERID,COMMENTS" > "$TMP_OUTPUT"
-tail -n +2 "$OUTPUT_CSV" | while IFS=',' read -r ORDER_ID COMMENT; do
+while IFS=',' read -r ORDER_ID COMMENT; do
     COMMENTS=$(check_in_files "$ORDER_ID")
-    echo "${ORDER_ID},\"${COMMENTS}\"" >> "$TMP_OUTPUT"
-done
+    printf '%s,"%s"\n' "$ORDER_ID" "$COMMENTS" >> "$TMP_OUTPUT"
+done < <(tail -n +2 "$OUTPUT_CSV")
 
 mv "$TMP_OUTPUT" "$OUTPUT_CSV"
 
