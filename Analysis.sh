@@ -86,6 +86,9 @@ function check_in_files {
 TMP_OUTPUT="${OUTPUT_CSV}.tmp"
 echo "ORDERID,COMMENTS" > "$TMP_OUTPUT"
 while IFS=',' read -r ORDER_ID COMMENT; do
+    ORDER_ID=$(echo "$ORDER_ID" | xargs)  # trim spaces
+    [[ -z "$ORDER_ID" ]] && continue      # skip blank lines
+
     COMMENTS=$(check_in_files "$ORDER_ID")
     printf '%s,"%s"\n' "$ORDER_ID" "$COMMENTS" >> "$TMP_OUTPUT"
 done < <(tail -n +2 "$OUTPUT_CSV")
