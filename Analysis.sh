@@ -55,52 +55,28 @@ ORDER_IDS=$(awk -F',' 'NR > 1 {print $1}' "$PQR_CSV_FILE" | sort | uniq)
   done
 } > "$OUTPUT_CSV"
 
-# === Step 7: Compare ORDERIDs across files ===
-echo "Comparing ORDERIDs across all files..."
+# === Step 7: Fill COMMENTS based on ORDERID match in column 18 of *_enter.csv files ===
+echo "Filling COMMENTS in $OUTPUT_CSV..."
 
-# Define match logic
-function check_in_files {
-    ORDER_ID="$1"
-    MATCHED=""
-
-    for FILE in "$TEMP_DIR"/*_enter*; do
-        if grep -q ",$ORDER_ID," "$FILE"; then MATCHED+="Found in $(basename "$FILE"); "; fi
-    done
-
-    for FILE in "$TEMP_DIR"/*_amend*; do
-        if grep -q ",$ORDER_ID," "$FILE"; then MATCHED+="Found in $(basename "$FILE"); "; fi
-    done
-
-    for FILE in "$TEMP_DIR"/*_offtr*; do
-        if grep -q ",$ORDER_ID," "$FILE"; then MATCHED+="Found in $(basename "$FILE"); "; fi
-    done
-
-    for FILE in "$TEMP_DIR"/*_trade*; do
-        if grep -q ",$ORDER_ID," "$FILE"; then MATCHED+="Found in $(basename "$FILE"); "; fi
-    done
-
-    echo "$MATCHED"
-}
-
-# Rewrite OUTPUT_CSV with COMMENTS
 TMP_OUTPUT="${OUTPUT_CSV}.tmp"
-echo "ORDERID,COMMENTS" > "$TMP_OUTPUT"
 
-tail -n +2 "$OUTPUT_CSV" > temp_orderids.csv
+tail -n +2 "$OUTPUT_CSV" | while IFS=',' read -r ORDER_ID COMMENT; do
+    COMMENT_TEXT=""
+    
+    for file in "$TEMP_DIR"/*_enter.csv; do
+        if awk -F'|' -v oid="$ORDER_ID" '$18 == oid {exit 0} END {exit 1}' "$file"; then
+            FILENAME=$(basename "$file")
+            COMMENT_TEXT="Found in $FILENAME"
+            break
+        fi
+    done
 
-while IFS=',' read -r ORDER_ID COMMENT; do
-    ORDER_ID=$(echo "$ORDER_ID" | xargs)
-    [[ -z "$ORDER_ID" ]] && continue
+    echo "${ORDER_ID},\"${COMMENT_TEXT}\"" >> "$TMP_OUTPUT"
+done
 
-    COMMENTS=$(check_in_files "$ORDER_ID")
-    printf '%s,"%s"\n' "$ORDER_ID" "$COMMENTS" >> "$TMP_OUTPUT"
-done < temp_orderids.csv
+# Recreate final CSV
+echo "ORDERID,COMMENTS" > "$OUTPUT_CSV"
+cat "$TMP_OUTPUT" >> "$OUTPUT_CSV"
+rm "$TMP_OUTPUT"
 
-rm temp_orderids.csv
-
-mv "$TMP_OUTPUT" "$OUTPUT_CSV"
-
-echo "Processing complete: $OUTPUT_CSV"
-
-# Optional: Clean up
-# rm -rf "$TEMP_DIR"
+echo "COMMENTS updated successfully."
