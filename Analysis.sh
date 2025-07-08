@@ -62,9 +62,10 @@ TMP_OUTPUT="${OUTPUT_CSV}.tmp"
 
 tail -n +2 "$OUTPUT_CSV" | while IFS=',' read -r ORDER_ID COMMENT; do
     COMMENT_TEXT=""
-    
+
     for file in "$TEMP_DIR"/*_enter.csv; do
-        if awk -F'|' -v oid="$ORDER_ID" '$18 == oid {exit 0} END {exit 1}' "$file"; then
+        # Skip first line (version), check from line 2 onwards
+        if tail -n +2 "$file" | awk -F'|' -v oid="$ORDER_ID" '$18 == oid {exit 0} END {exit 1}'; then
             FILENAME=$(basename "$file")
             COMMENT_TEXT="Found in $FILENAME"
             break
@@ -74,7 +75,7 @@ tail -n +2 "$OUTPUT_CSV" | while IFS=',' read -r ORDER_ID COMMENT; do
     echo "${ORDER_ID},\"${COMMENT_TEXT}\"" >> "$TMP_OUTPUT"
 done
 
-# Recreate final CSV
+# Rebuild the final CSV
 echo "ORDERID,COMMENTS" > "$OUTPUT_CSV"
 cat "$TMP_OUTPUT" >> "$OUTPUT_CSV"
 rm "$TMP_OUTPUT"
