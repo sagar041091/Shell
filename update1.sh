@@ -77,10 +77,19 @@ ALL_NAMES=("amend.csv" "cantr.csv" "delet.csv" "enter.csv" "offtr.csv" "trade.cs
 
 for NAME in "${ALL_NAMES[@]}"; do
     OUTPUT_FILE="$OUTBOUND_DIR/$NAME"
-    > "$OUTPUT_FILE"  # create empty file
+    > "$OUTPUT_FILE"
 
+    FIRST=1
     for EXDIR in "$TEMP_ROOT"/*; do
-        [[ -f "$EXDIR/$NAME" ]] && tail -n +1 "$EXDIR/$NAME" >> "$OUTPUT_FILE"
+        FILE="$EXDIR/$NAME"
+        [[ -f "$FILE" ]] || continue
+
+        if [[ $FIRST -eq 1 ]]; then
+            cat "$FILE" >> "$OUTPUT_FILE"  # include header
+            FIRST=0
+        else
+            tail -n +2 "$FILE" >> "$OUTPUT_FILE"  # skip header
+        fi
     done
 done
 
