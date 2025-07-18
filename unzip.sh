@@ -1,38 +1,35 @@
 #!/bin/bash
 
-# Input file
+# Input tar.gz file
 TAR_FILE="YYYYMMDD.ICEEULBK.tar.gz"
 
-# Extract Exchange name (e.g. ICEEULBK)
+# Extract Exchange name from file name
 EXCHANGE_NAME=$(basename "$TAR_FILE" .tar.gz | cut -d'.' -f2)
 
 # Working directory
 WORKDIR="iceeulbk_temp"
 mkdir -p "$WORKDIR"
 
-# Extract files
+# Extract contents
 tar -xzf "$TAR_FILE" -C "$WORKDIR"
 
-# Loop over each CSV
+# Loop over each .csv file
 for FILE in "$WORKDIR"/*.csv; do
     BASENAME=$(basename "$FILE")
     TEMPFILE="$WORKDIR/tmp_$BASENAME"
 
-    # Remove first row and prepend Exchange column
+    # Remove first line (header) and prepend Exchange column (pipe-separated)
     awk -v exch="$EXCHANGE_NAME" '
-    BEGIN { OFS = ","; header = 1 }
+    BEGIN { FS=OFS="|"; header=1 }
     {
-        if (header) {
-            header = 0;
-            next;
-        }
-        print exch, $0;
+        if (header) { header=0; next }
+        print exch, $0
     }' "$FILE" > "$TEMPFILE"
 
-    # Count columns
-    NUM_COLS=$(head -n 1 "$TEMPFILE" | awk -F',' '{print NF}')
+    # Count number of columns (after adding Exchange column)
+    NUM_COLS=$(head -n 1 "$TEMPFILE" | awk -F'|' '{print NF}')
 
-    # Determine which column should be 'Parent Order Id'
+    # Function: assign special header name based on rules
     get_custom_header_name() {
         local base="$1"
         local index="$2"
@@ -51,21 +48,21 @@ for FILE in "$WORKDIR"/*.csv; do
                 ;;
         esac
 
-        # Default: alphabet a, b, c, ...
+        # Default: alphabetic column names (a, b, c...)
         printf \\$(printf '%03o' $((96 + index)))
     }
 
-    # Generate header
+    # Construct the header row
     HEADER="Exchange"
     for ((i=2; i<=NUM_COLS; i++)); do
         COL_NAME=$(get_custom_header_name "$BASENAME" "$i" "$NUM_COLS")
-        HEADER="$HEADER,$COL_NAME"
+        HEADER="$HEADER|$COL_NAME"
     done
 
-    # Finalize file
+    # Overwrite original file with new header + data
     echo "$HEADER" > "$FILE"
     cat "$TEMPFILE" >> "$FILE"
     rm "$TEMPFILE"
 done
 
-echo "✅ All CSVs processed with special header logic. Output in: $WORKDIR"
+echo "✅ Pipe-delimited CSVs processed with custom headers. Output in: $WORKDIR"
