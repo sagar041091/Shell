@@ -8,7 +8,7 @@ DELET_OB_FILE="20230116_OUTBOUND/delet.csv"
 INBOUND_TEMP="inbound_temp"
 DELET_OB_TEMP="delet_temp"
 
-# Process UBS_20230116.csv → group by CLORDID_11 & EXECTYPE_150
+# Process UBS_20230116.csv → group by CLORDID_11 & EXECTYPE_150 (CSV format)
 awk -F',' '
 BEGIN {
     OFS=","
@@ -36,8 +36,8 @@ END {
 }
 ' "$INBOUND_FILE"
 
-# Process delet.csv → group by MESSAGE_TYPE & PARENT_ORDER_ID
-awk -F',' '
+# Process delet.csv → group by MESSAGE_TYPE & PARENT_ORDER_ID (| pipe-delimited)
+awk -F'|' '
 BEGIN {
     OFS=","
 }
