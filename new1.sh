@@ -73,8 +73,8 @@ END {
 # Step 3: Extract CLORDID_11s with EXECTYPE_150 == 4 from INBOUND
 awk -F',' 'NR > 1 && $2 == 4 { print $1 }' "$INBOUND_TEMP" | sort > clordid_exe4.txt
 
-# ✅ Step 4: Extract PARENT_ORDER_IDs only for matching DATE from delet_temp
-awk -F',' -v run_date="$RUN_DATE" 'NR > 1 && $1 == run_date { print $3 }' "$DELET_OB_TEMP" | sort > parent_ids.txt
+# Step 4: Extract PARENT_ORDER_IDs from DELET (column 3)
+awk -F',' 'NR > 1 { print $3 }' "$DELET_OB_TEMP" | sort > parent_ids.txt
 
 # Step 5: Compare counts and find missing IDs
 clordid_count=$(wc -l < clordid_exe4.txt)
