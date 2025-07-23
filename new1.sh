@@ -1,6 +1,7 @@
 #!/bin/bash
 
 FILE="UBS_20230116.csv"
+TEMP_FILE="temp_exec_count.csv"
 
 awk -F',' '
 BEGIN {
@@ -22,10 +23,12 @@ NR==1 {
     count[key]++
 }
 END {
-    print "CLORDID_11,EXECTYPE_150,COUNT"
+    print "CLORDID_11,EXECTYPE_150,COUNT" > "'"$TEMP_FILE"'"
     for (k in count) {
         split(k, parts, "|")
-        print parts[1], parts[2], count[k]
+        print parts[1], parts[2], count[k] >> "'"$TEMP_FILE"'"
     }
 }
 ' "$FILE"
+
+awk -F',' 'NR > 1 && $2 == 4 { total += $3 } END { print total }' temp_exec_count.csv
