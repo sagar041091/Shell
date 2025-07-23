@@ -1,121 +1,94 @@
 #!/bin/bash
 
-# --- 1. Input ---
-if [ $# -lt 1 ]; then
-    echo "❌ Usage: $0 <DATE_PREFIX>"
-    echo "Example: $0 20250718"
-    exit 1
-fi
+# Input files
+INBOUND_FILE="20230116_INBOUND/UBS_20230116.csv"
+DELET_OB_FILE="20230116_OUTBOUND/delet.csv"
 
-DATE_PREFIX="$1"
-TEMP_ROOT="temp_processing"
-OUTBOUND_DIR="${DATE_PREFIX}_OUTBOUND"
-mkdir -p "$TEMP_ROOT"
-mkdir -p "$OUTBOUND_DIR"
+# Output temp files
+INBOUND_TEMP="inbound_temp"
+DELET_OB_TEMP="delet_temp"
 
-echo "📦 Processing files for date: $DATE_PREFIX"
+# Process UBS_20230116.csv → group by CLORDID_11 & EXECTYPE_150 (CSV format)
+awk -F',' '
+BEGIN {
+    OFS=","
+}
+NR==1 {
+    for (i = 1; i <= NF; i++) {
+        gsub(/"/, "", $i)
+        header[$i] = i
+    }
+    next
+}
+{
+    gsub(/"/, "", $0)
+    clordid = $header["CLORDID_11"]
+    exectype = $header["EXECTYPE_150"]
+    key = clordid "|" exectype
+    count[key]++
+}
+END {
+    print "CLORDID_11,EXECTYPE_150,COUNT" > "'$INBOUND_TEMP'"
+    for (k in count) {
+        split(k, parts, "|")
+        print parts[1], parts[2], count[k] >> "'$INBOUND_TEMP'"
+    }
+}
+' "$INBOUND_FILE"
 
-# --- 2. Process each .tar.gz ---
-for TAR_FILE in ${DATE_PREFIX}.*.tar.gz; do
-    [[ -f "$TAR_FILE" ]] || continue
+# ✅ Updated: Process delet.csv → group by DATE, MESSAGE_TYPE & PARENT_ORDER_ID (| pipe-delimited)
+awk -F'|' '
+BEGIN {
+    OFS=","
+}
+NR==1 {
+    for (i = 1; i <= NF; i++) {
+        gsub(/"/, "", $i)
+        header[$i] = i
+    }
+    next
+}
+{
+    gsub(/"/, "", $0)
+    date = $header["DATE"]
+    msgtype = $header["MESSAGE_TYPE"]
+    parentid = $header["PARENT_ORDER_ID"]
+    key = date "|" msgtype "|" parentid
+    count[key]++
+}
+END {
+    print "DATE,MESSAGE_TYPE,PARENT_ORDER_ID,COUNT" > "'$DELET_OB_TEMP'"
+    for (k in count) {
+        split(k, parts, "|")
+        print parts[1], parts[2], parts[3], count[k] >> "'$DELET_OB_TEMP'"
+    }
+}
+' "$DELET_OB_FILE"
 
-    EXCHANGE_NAME=$(basename "$TAR_FILE" .tar.gz | cut -d'.' -f2)
-    WORKDIR="$TEMP_ROOT/$EXCHANGE_NAME"
-    mkdir -p "$WORKDIR"
+# Step 1: Extract CLORDID_11s with EXECTYPE_150 == 4 from inbound_temp
+awk -F',' 'NR > 1 && $2 == 4 { print $1 }' "$INBOUND_TEMP" | sort > clordid_exe4.txt
 
-    echo "🔍 Extracting $TAR_FILE → $WORKDIR"
-    tar -xzf "$TAR_FILE" -C "$WORKDIR"
+# Step 2: Extract PARENT_ORDER_IDs from delet_temp (now 3 columns, take 3rd col)
+awk -F',' 'NR > 1 { print $3 }' "$DELET_OB_TEMP" | sort > parent_ids.txt
 
-    for FILE in "$WORKDIR"/*.csv; do
-        BASENAME=$(basename "$FILE")
-        TEMPFILE="$WORKDIR/tmp_$BASENAME"
+# Step 3: Count the number of each
+clordid_count=$(wc -l < clordid_exe4.txt)
+parentid_count=$(wc -l < parent_ids.txt)
 
-        # Remove header and add Exchange column
-        awk -v exch="$EXCHANGE_NAME" '
-        BEGIN { FS=OFS="|"; header=1 }
-        {
-            if (header) { header=0; next }
-            print exch, $0
-        }' "$FILE" > "$TEMPFILE"
+echo "Count of CLORDID_11 with EXECTYPE_150 == 4: $clordid_count"
+echo "Count of PARENT_ORDER_IDs: $parentid_count"
 
-        # Skip if file is empty after header removal
-        if [[ ! -s "$TEMPFILE" ]]; then
-            echo "⚠️  Skipping empty file: $BASENAME (no data rows)"
-            rm -f "$FILE" "$TEMPFILE"
-            continue
-        fi
+# Step 4: Compare and find missing CLORDID_11s if counts don’t match
+if [ "$clordid_count" -ne "$parentid_count" ]; then
+    echo "❌ Count mismatch — finding missing CLORDID_11s..."
+    comm -23 clordid_exe4.txt parent_ids.txt > missing_clordids.txt
 
-        NUM_COLS=$(head -n 1 "$TEMPFILE" | awk -F'|' '{print NF}')
-
-        # --- 3. Column Naming Function ---
-        get_custom_header_name() {
-            local base="$1"
-            local index="$2"
-            local total="$3"
-            local from_end=$((total - index + 1))
-
-            case "$base" in
-                "trade.csv")
-                    [[ $from_end -eq 2 ]] && echo "Parent Order Id" && return ;;
-                "offtr.csv")
-                    [[ $from_end -eq 2 ]] && echo "Parent Order Id" && return ;;
-                "delet.csv")
-                    [[ $from_end -eq 3 ]] && echo "Parent Order Id" && return ;;
-                "enter.csv")
-                    [[ $from_end -eq 5 ]] && echo "Parent Order Id" && return ;;
-                "amend.csv")
-                    [[ $from_end -eq 5 ]] && echo "Parent Order Id" && return ;;
-            esac
-
-            printf \\$(printf '%03o' $((96 + index)))
-        }
-
-        # --- 4. Build header line ---
-        HEADER="Exchange"
-        for ((i=2; i<=NUM_COLS; i++)); do
-            COL_NAME=$(get_custom_header_name "$BASENAME" "$i" "$NUM_COLS")
-            HEADER="$HEADER|$COL_NAME"
-        done
-
-        echo "$HEADER" > "$FILE"
-        cat "$TEMPFILE" >> "$FILE"
-        rm "$TEMPFILE"
-    done
-done
-
-# --- 5. Merge CSVs ---
-ALL_NAMES=("amend.csv" "cantr.csv" "delet.csv" "enter.csv" "offtr.csv" "trade.csv")
-echo "📂 Merging files into: $OUTBOUND_DIR"
-
-for NAME in "${ALL_NAMES[@]}"; do
-    OUTPUT_FILE="$OUTBOUND_DIR/$NAME"
-    > "$OUTPUT_FILE"
-    FIRST=1
-
-    for EXDIR in "$TEMP_ROOT"/*; do
-        FILE="$EXDIR/$NAME"
-        [[ -f "$FILE" ]] || continue
-
-        if [[ $FIRST -eq 1 ]]; then
-            cat "$FILE" >> "$OUTPUT_FILE"  # keep header
-            FIRST=0
-        else
-            tail -n +2 "$FILE" >> "$OUTPUT_FILE"  # skip header
-        fi
-    done
-done
-
-# --- 6. Unzip UBS file ---
-ZIP_FILE="UBS_${DATE_PREFIX}.zip"
-INBOUND_DIR="${DATE_PREFIX}_INBOUND"
-
-if [[ -f "$ZIP_FILE" ]]; then
-    echo "🗜️  Unzipping $ZIP_FILE → $INBOUND_DIR"
-    mkdir -p "$INBOUND_DIR"
-    unzip -q "$ZIP_FILE" -d "$INBOUND_DIR"
-    echo "✅ UBS zip extracted."
+    if [ -s missing_clordids.txt ]; then
+        echo "Missing CLORDID_11s (present in inbound, not in outbound):"
+        cat missing_clordids.txt
+    else
+        echo "All CLORDID_11s with EXECTYPE_150 = 4 are matched in outbound."
+    fi
 else
-    echo "⚠️  UBS zip not found: $ZIP_FILE"
+    echo "✅ Counts match — no missing CLORDID_11s."
 fi
-
-echo "✅ All tasks completed for: $DATE_PREFIX"
