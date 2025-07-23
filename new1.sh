@@ -36,7 +36,7 @@ END {
 }
 ' "$INBOUND_FILE"
 
-# Process delet.csv → group by MESSAGE_TYPE & PARENT_ORDER_ID (| pipe-delimited)
+# ✅ Updated: Process delet.csv → group by DATE, MESSAGE_TYPE & PARENT_ORDER_ID (| pipe-delimited)
 awk -F'|' '
 BEGIN {
     OFS=","
@@ -50,16 +50,17 @@ NR==1 {
 }
 {
     gsub(/"/, "", $0)
+    date = $header["DATE"]
     msgtype = $header["MESSAGE_TYPE"]
     parentid = $header["PARENT_ORDER_ID"]
-    key = msgtype "|" parentid
+    key = date "|" msgtype "|" parentid
     count[key]++
 }
 END {
-    print "MESSAGE_TYPE,PARENT_ORDER_ID,COUNT" > "'$DELET_OB_TEMP'"
+    print "DATE,MESSAGE_TYPE,PARENT_ORDER_ID,COUNT" > "'$DELET_OB_TEMP'"
     for (k in count) {
         split(k, parts, "|")
-        print parts[1], parts[2], count[k] >> "'$DELET_OB_TEMP'"
+        print parts[1], parts[2], parts[3], count[k] >> "'$DELET_OB_TEMP'"
     }
 }
 ' "$DELET_OB_FILE"
@@ -67,8 +68,8 @@ END {
 # Step 1: Extract CLORDID_11s with EXECTYPE_150 == 4 from inbound_temp
 awk -F',' 'NR > 1 && $2 == 4 { print $1 }' "$INBOUND_TEMP" | sort > clordid_exe4.txt
 
-# Step 2: Extract PARENT_ORDER_IDs from delet_temp
-awk -F',' 'NR > 1 { print $2 }' "$DELET_OB_TEMP" | sort > parent_ids.txt
+# Step 2: Extract PARENT_ORDER_IDs from delet_temp (now 3 columns, take 3rd col)
+awk -F',' 'NR > 1 { print $3 }' "$DELET_OB_TEMP" | sort > parent_ids.txt
 
 # Step 3: Count the number of each
 clordid_count=$(wc -l < clordid_exe4.txt)
