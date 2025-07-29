@@ -1,59 +1,33 @@
 #!/bin/bash
 
-DATE_PREFIX="$1"
+START_DATE_RAW="$1"
+END_DATE_RAW="$2"
 
-# Validate input
-if [[ -z "$DATE_PREFIX" ]]; then
-    echo "Usage: $0 <YYYY-MM-DD | YYYY-MM | YYYY-QX>"
+# Check if both parameters are provided
+if [[ -z "$START_DATE_RAW" || -z "$END_DATE_RAW" ]]; then
+    echo "Usage: $0 <START_DATE: YYYYMMDD> <END_DATE: YYYYMMDD>"
     exit 1
 fi
 
-# Function to get dates from quarter
-get_dates_from_quarter() {
-    local quarter=$1
-    local year=${quarter%-Q*}
-    local q=${quarter#*Q}
+# Convert to YYYY-MM-DD for `date` command
+START_DATE=$(date -d "${START_DATE_RAW}" +"%Y-%m-%d") || { echo "Invalid start date"; exit 1; }
+END_DATE=$(date -d "${END_DATE_RAW}" +"%Y-%m-%d") || { echo "Invalid end date"; exit 1; }
 
-    case $q in
-        1) start="${year}-01-01"; end="${year}-03-31" ;;
-        2) start="${year}-04-01"; end="${year}-06-30" ;;
-        3) start="${year}-07-01"; end="${year}-09-30" ;;
-        4) start="${year}-10-01"; end="${year}-12-31" ;;
-        *) echo "Invalid quarter"; exit 1 ;;
-    esac
-
-    # Generate date range
-    current="$start"
-    while [[ "$current" < "$end" || "$current" == "$end" ]]; do
-        echo "$current"
-        current=$(date -I -d "$current + 1 day")
-    done
-}
-
-# Identify format and generate dates
-if [[ "$DATE_PREFIX" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-    # Single date
-    DATE_LIST=("$DATE_PREFIX")
-elif [[ "$DATE_PREFIX" =~ ^[0-9]{4}-[0-9]{2}$ ]]; then
-    # Full month
-    year=${DATE_PREFIX%-*}
-    month=${DATE_PREFIX#*-}
-    days_in_month=$(cal $month $year | awk 'NF {DAYS = $NF}; END {print DAYS}')
-    
-    DATE_LIST=()
-    for day in $(seq -w 1 $days_in_month); do
-        DATE_LIST+=("${year}-${month}-${day}")
-    done
-elif [[ "$DATE_PREFIX" =~ ^[0-9]{4}-Q[1-4]$ ]]; then
-    # Quarter
-    DATE_LIST=($(get_dates_from_quarter "$DATE_PREFIX"))
-else
-    echo "Invalid format. Use YYYY-MM-DD, YYYY-MM, or YYYY-QX"
+# Validate range
+if [[ "$START_DATE" > "$END_DATE" ]]; then
+    echo "Start date must not be after end date"
     exit 1
 fi
 
-# Iterate over the generated date list
-for DATE in "${DATE_LIST[@]}"; do
-    echo "Running logic for $DATE"
-    # YOUR LOGIC HERE
+# Loop through date range
+CURRENT_DATE="$START_DATE"
+while [[ "$CURRENT_DATE" < "$END_DATE" || "$CURRENT_DATE" == "$END_DATE" ]]; do
+    FORMATTED_DATE=$(date -d "$CURRENT_DATE" +"%Y%m%d")
+    echo "Running logic for $FORMATTED_DATE"
+
+    # === YOUR LOGIC GOES HERE ===
+    # Example: process_file_for_date "$FORMATTED_DATE"
+
+    # Increment date
+    CURRENT_DATE=$(date -I -d "$CURRENT_DATE + 1 day")
 done
